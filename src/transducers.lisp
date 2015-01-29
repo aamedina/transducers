@@ -1,25 +1,5 @@
 (in-package :transducers)
 
-(defgeneric seq (o)
-  (declare (optimize speed (space 0))))
-
-(defmethod seq ((o sequence))
-  (declare (optimize speed (safety 0) (debug 0) (space 0)))
-  o)
-
-(defmethod seq ((s simple-string))
-  (declare (optimize speed (safety 0) (debug 0) (space 0)))
-  (loop
-    for ch across s collect ch))
-
-(defmethod seq ((hash-table hash-table))
-  (declare (optimize speed (safety 0) (debug 0) (space 0)))
-  (when (plusp (hash-table-count hash-table))
-    (loop
-      for k being the hash-keys in hash-table
-      for v being the hash-values in hash-table
-      collect (cons k v))))
-
 (defgeneric coll-reduce (coll f val)
   (declare (optimize speed (space 0))))
 
@@ -44,8 +24,20 @@
       (coll-reduce init-or-coll f coll-or-init)
       (coll-reduce coll-or-init f init-or-coll)))
 
+(defun map (f &optional coll &rest more)
+  (declare (function f))
+  (cond (more (lazy-seq
+                (cons (apply f (cons (first coll) (map #'first more)))
+                      (apply #'map f (cons (rest coll) (map #'rest more))))))
+        (coll (lazy-seq
+                (cons (funcall f (first coll)) (map f (rest coll)))))
+        (f (lambda (rf) rf))
+        (t ())))
+
 (defun comp (&optional f g &rest more)
+  (declare ((or function null) f g))
   (cond (more (reduce #'comp (comp f g) more))
-        (g (lambda (&rest args) (funcall f (apply g args))))
+        (g (lambda (&rest args)
+             (funcall f (apply g args))))
         (f f)
         (t #'identity)))
