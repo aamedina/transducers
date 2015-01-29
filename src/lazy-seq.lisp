@@ -7,7 +7,7 @@
 
 ;; Lazy sequence type based on clojure.lang.LazySeq
 
-(defstruct lazy-sequence
+(defstruct (lazy-sequence (:print-object print-lazy-sequence))
   sv
   (s nil :type sequence)
   (f nil :type (or null function)))
@@ -34,3 +34,15 @@
         (setf ls (sval ls)))
       (setf (lazy-sequence-s o) (seq ls))))
   (lazy-sequence-s o))
+
+(defun print-lazy-sequence (seq stream)
+  (if (seq seq)
+      (progn
+        (princ "(" stream)
+        (when-let (o (first seq))
+          (prin1 o stream)
+          (when-let (seq (next seq))
+            (princ #\space stream)
+            (print-inner-seq seq stream)))
+        (princ ")" stream))
+      (princ nil stream)))
