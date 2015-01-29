@@ -12,13 +12,16 @@
   (loop
     for ch across s collect ch))
 
-(defmethod seq ((o hash-table))
+(defmethod seq ((hash-table hash-table))
   (declare (optimize speed (safety 0) (debug 0) (space 0)))
-  (loop
-    for k being the hash-keys in o
-    for v being the hash-values in o
-    collect (cons k v)))
+  (when (plusp (hash-table-count hash-table))
+    (loop
+      for k being the hash-keys in hash-table
+      for v being the hash-values in hash-table
+      collect (cons k v))))
 
-
-
-
+(defun comp (&optional f g &rest more)
+  (cond (more (comp (comp f g) more))
+        (g (lambda (&rest args) (funcall f (apply g args))))
+        (f f)
+        (t #'identity)))
