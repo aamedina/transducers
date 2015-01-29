@@ -20,7 +20,7 @@
 
 (defmethod coll-reduce (coll f val)
   (declare (function f) (optimize speed (safety 0) (debug 0) (space 0)))
-  (when-let (s (seq coll))
+  (when-let (s (seq coll))    
     (seq-reduce s f (if val (funcall f val) (funcall f)))))
 
 (define-compiler-macro reduce (f coll &optional val)
@@ -76,6 +76,15 @@
         (start (range 0 start 1))
         (t (range 0 most-positive-fixnum 1))))
 
+(defun range-vec (&optional start end step)
+  (declare (type (or fixnum null) start end step))
+  (cond (step (when (not (= start end))
+                (lazy-seq
+                  (cons start (range (+ start step) end step)))))
+        (end (range start end 1))
+        (start (range 0 start 1))
+        (t (error "Unbounded range-vecs are disallowed"))))
+
 (defun iterate (f x)
   (declare (function f))
   (cons x (lazy-seq (iterate f (funcall f x)))))
@@ -113,4 +122,3 @@
         (take n (repeat x))
         (lazy-seq
           (cons x (repeat x))))))
-
