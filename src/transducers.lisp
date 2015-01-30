@@ -142,3 +142,40 @@
   (if colls
       (apply #'concat (apply #'map f colls))
       (comp (map f) #'cat)))
+
+(defmacro loop* (bindings &body body)
+  (with-gensyms (f)
+    `(labels ((,f ,(map #'first bindings) (progn ,@(subst f 'recur body))))
+       (,f ,@(map #'second bindings)))))
+
+(defun nthnext (coll n)
+  (loop* ((n n)
+          (xs (seq coll)))
+    (if (and xs (plusp n))
+        (recur (dec n) (next xs))
+        xs)))
+
+(defun nthrest (coll n)
+  (loop* ((n n)
+          (xs coll))
+    (if (and (plusp n) (seq xs))
+        (recur (dec n) (rest xs))
+        xs)))
+
+(defun partition-all (n)
+  (lambda (rf)
+    (let ((vec (make-array 0 :adjustable t)))
+      (lambda (&optional (result nil resultp) (input nil inputp))
+        (cond (inputp (progn
+                        (push vec input)
+                        (if (= n (length vec))
+                            (funcall rf result vec)
+                            result)))
+              (resultp (progn
+                         (if (emptyp vec)
+                             (funcall rf result)
+                             (funcall rf (funcall rf result vec)))))
+              (t (funcall rf)))))))
+
+
+
