@@ -30,22 +30,31 @@
   (declare (function f) (optimize speed (safety 0) (debug 0) (space 0)))
   (coll-reduce coll f val))
 
-(define-compiler-macro map (&whole e f &optional (coll nil collp) &rest more)
-  (declare (ignore f coll))
-  (cond (more e)
-        (collp e)
-        (t e)))
+(defun interleave (&optional c1 c2 &rest more)
+  (cond (more (let ((ss (map #'seq (list* c1 c2 more))))
+                (concat (map #'first ss)
+                        (apply #'interleave (map #'next ss)))))
+        (c2 (when-let ((s1 (seq c1))
+                       (s2 (seq c2)))
+              (cons (first s1)
+                    (cons (first s2) (interleave (rest s1) (rest s2))))))
+        (c1 c1)
+        (t nil)))
 
-(defun map (f &optional (coll nil collp) &rest more)
+(defun map (f &optional (coll nil has-collp) &rest more)
   (declare (function f))
-  (cond (more (lazy-seq
-                (cons (apply f (cons (first coll) (map #'first more)))
-                      (apply #'map f (cons (rest coll) (map #'rest more))))))
-        (collp (when coll
-                 (lazy-seq
-                   (cons (funcall f (first coll)) (map f (rest coll))))))
-        (f (lambda (rf) rf))
-        (t ())))
+  (cond (more (map f (apply #'interleave coll more)))
+        (has-collp (when-let (x (first coll))
+                     (cons (funcall f x) (map f (rest coll)))))
+        (f (lambda (rf)
+             (declare (function rf))
+             (lambda (&optional (x nil xp) (y nil yp) &rest inputs)
+               (declare (optimize speed (debug 0) (safety 0)))
+               (cond (inputs (funcall rf x (apply f y inputs)))
+                     (yp (funcall rf x (funcall f y)))
+                     (xp (funcall rf x))
+                     (t (funcall rf))))))
+        (t nil)))
 
 (defun comp (&optional f g &rest more)
   (declare ((or function null) f g))
@@ -67,58 +76,69 @@
 (defun dec (n)
   (1- n))
 
-(defun range (&optional start end step)
+(defun range (start &optional end step)
   (declare (type (or fixnum null) start end step))
   (cond (step (when (not (= start end))
-                (lazy-seq
-                  (cons start (range (+ start step) end step)))))
+                (loop
+                  for i from start below end by step
+                  collect i)))
         (end (range start end 1))
         (start (range 0 start 1))
         (t (range 0 most-positive-fixnum 1))))
 
-(defun range-vec (&optional start end step)
-  (declare (type (or fixnum null) start end step))
-  (cond (step (when (not (= start end))
-                (lazy-seq
-                  (cons start (range (+ start step) end step)))))
-        (end (range start end 1))
-        (start (range 0 start 1))
-        (t (error "Unbounded range-vecs are disallowed"))))
-
-(defun iterate (f x)
-  (declare (function f))
-  (cons x (lazy-seq (iterate f (funcall f x)))))
-
 (defun take (n coll)
   (declare (fixnum n))
   (when (and (plusp n) coll)
-    (lazy-seq
-      (cons (first coll) (take (dec n) (rest coll)))) ))
+    (cons (first coll) (take (dec n) (rest coll)))))
 
 (defun take-while (pred coll)
   (declare (function pred))
   (when-let (x (and (funcall pred (first coll)) (first coll)))
-    (lazy-seq
-      (cons x (take-while pred (rest coll))))))
+    (cons x (take-while pred (rest coll)))))
 
 (defun drop (n coll)
   (declare (fixnum n))
   (if (plusp n)
-    (lazy-seq
       (when (seq coll)
-        (drop (dec n) (rest coll))))
-    coll))
+        (drop (dec n) (rest coll)))
+      coll))
 
 (defun drop-while (pred coll)
   (declare (function pred))
   (when-let (x (and (funcall pred (first coll)) (first coll)))
-    (lazy-seq
-      (cons x (take-while pred (rest coll))))))
+    (cons x (take-while pred (rest coll)))))
 
-(defun repeat (x &optional (n most-positive-fixnum providedp))
+(defun repeat (x n)
   (declare (fixnum n))
-  (when (plusp n)
-    (if providedp
-        (take n (repeat x))
-        (lazy-seq
-          (cons x (repeat x))))))
+  (loop
+    for i from 1 to n
+    collect x))
+
+(defun completing (f &optional (cf #'identity))
+  (declare (function f cf))
+  (lambda (&optional (x nil xp) (y nil yp))
+    (declare (optimize speed (debug 0) (safety 0)))
+    (cond (yp (funcall f x y))
+          (xp (funcall cf x))
+          (t (funcall f)))))
+
+(defun concat (&optional x y &rest more)
+  (cond (more (apply #'concat (concat x y) more))
+        (y (if (seq x)
+               (cons (first x) (concat (rest x) y))
+               y))
+        (x x)
+        (t nil)))
+
+(defun cat (rf)
+  (declare (function rf))
+  (lambda (&optional (x nil xp) (y nil yp))
+    (declare (optimize speed (debug 0) (safety 0)))
+    (cond (yp (funcall rf x y))
+          (xp (funcall rf x))
+          (t (funcall rf)))))
+
+(defun mapcat (f &rest colls)
+  (if colls
+      (apply #'concat (apply #'map f colls))
+      (comp (map f) #'cat)))
