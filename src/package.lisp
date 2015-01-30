@@ -1,9 +1,8 @@
 (defpackage :transducers
   (:use :common-lisp :alexandria)
-  (:shadow :map :reduce :first :rest))
+  (:shadow :map :reduce))
 
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (proclaim '(optimize speed)))
+(proclaim '(optimize speed))
 
 (defmacro when-not (test &body body)
   `(if ,test nil (progn ,@body)))
