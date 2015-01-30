@@ -1,6 +1,6 @@
 (defpackage :transducers
   (:use :common-lisp :alexandria)
-  (:shadow :map :reduce))
+  (:shadow :map))
 
 (proclaim '(optimize speed))
 
