@@ -208,4 +208,3 @@
   (let* ((f (funcall xf f))
          (ret (coll-reduce coll f init)))
     (funcall f ret)))
-
