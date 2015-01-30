@@ -86,24 +86,24 @@
         (start (range 0 start 1))
         (t (range 0 most-positive-fixnum 1))))
 
-(defun take (n coll)
+(defun take (n &optional coll)
   (declare (fixnum n))
   (when (and (plusp n) coll)
     (cons (first coll) (take (dec n) (rest coll)))))
 
-(defun take-while (pred coll)
+(defun take-while (pred &optional coll)
   (declare (function pred))
   (when-let (x (and (funcall pred (first coll)) (first coll)))
     (cons x (take-while pred (rest coll)))))
 
-(defun drop (n coll)
+(defun drop (n &optional coll)
   (declare (fixnum n))
   (if (plusp n)
       (when (seq coll)
         (drop (dec n) (rest coll)))
       coll))
 
-(defun drop-while (pred coll)
+(defun drop-while (pred &optional coll)
   (declare (function pred))
   (when-let (x (and (funcall pred (first coll)) (first coll)))
     (cons x (take-while pred (rest coll)))))

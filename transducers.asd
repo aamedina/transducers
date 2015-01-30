@@ -7,6 +7,5 @@
   :pathname "src"
   :components ((:file "package")
                (:file "seq")
-               (:file "lazy-seq")
                (:file "transducers")))
 
