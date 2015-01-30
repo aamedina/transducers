@@ -162,20 +162,29 @@
         (recur (dec n) (rest xs))
         xs)))
 
+(defmacro reducing (rf &body body)
+  (destructuring-bind ((&rest b0) (a1 &rest b1) (a2 &rest b2)) body
+    (with-gensyms (result input resultp inputp)
+      `(flet ((,rf (&rest args) (apply ,rf args)))
+         (lambda (&optional (,result nil ,resultp) (,input nil ,inputp))
+           (cond (,inputp (let ((,(car a2) ,result)
+                                (,(cadr a2) ,input))
+                            ,@b2))
+                 (,resultp (let ((,(car a1) ,result))
+                             ,@b1))
+                 (t ,@b0)))))))
+
 (defun partition-all (n)
   (lambda (rf)
     (let ((vec (make-array 0 :adjustable t)))
-      (lambda (&optional (result nil resultp) (input nil inputp))
-        (cond (inputp (progn
-                        (push vec input)
-                        (if (= n (length vec))
-                            (funcall rf result vec)
-                            result)))
-              (resultp (progn
-                         (if (emptyp vec)
-                             (funcall rf result)
-                             (funcall rf (funcall rf result vec)))))
-              (t (funcall rf)))))))
-
-
-
+      (reducing rf
+        (() (rf))
+        ((result)
+         (if (emptyp vec)
+             (rf result)
+             (rf (rf result vec))))
+        ((result input)
+         (push vec input)
+         (if (= n (length vec))
+             (rf result vec)
+             result))))))
