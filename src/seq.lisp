@@ -1,15 +1,16 @@
 (in-package :transducers)
 
 (defgeneric seq (o)
-  (declare (optimize speed (space 0))))
-
-(defmethod seq ((o sequence))
-  (declare (optimize speed (safety 0) (debug 0) (space 0)))
-  o)
+  (declare (optimize speed (space 0)))
+  (:method ((o sequence)) o))
 
 (defmethod seq ((s simple-string))
   (declare (optimize speed (safety 0) (debug 0) (space 0)))
   (loop for ch across s collect ch))
+
+(defmethod seq ((a simple-vector))
+  (declare (optimize speed (safety 0) (debug 0) (space 0)))
+  (loop for x across a collect x))
 
 (defmethod seq ((hash-table hash-table))
   (declare (optimize speed (safety 0) (debug 0) (space 0)))
