@@ -6,6 +6,8 @@
   :serial t
   :pathname "src"
   :components ((:file "package")
+               (:file "macros")
                (:file "seq")
+               (:file "functional")
                (:file "transducers")))
 
