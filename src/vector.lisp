@@ -9,8 +9,7 @@
    (tail :type array :initform (make-array 0) :initarg :tail :accessor :tail))
   (:metaclass sb-mop:funcallable-standard-class))
 
-(define-constant empty-vector
-    (load-time-value (make-instance 'persistent-vector)))
+(define-constant empty-vector (make-instance 'persistent-vector))
 
 (declaim (inline tailoff))
 (defun tailoff (vec)
@@ -79,6 +78,21 @@
       (let ((subidx (bit-and (bit-shift-right i level) #x01f)))
         (assoc-in! (- level 5) (aref (cdr node) subidx) i val))))
 
+(declaim (inline vec-conj!))
+(defun vec-conj! (tcoll val)
+  (declare (transient-vector tcoll))
+  (let ((i (:count tcoll)))
+    (when (< (- i (tailoff tcoll)) 32)
+      (setf (aref (:tail tcoll) (bit-and i #x01f)) val)
+      (setf (:count tcoll) (1+ i))
+      (return-from vec-conj! tcoll))))
+
+(declaim (inline conj!))
+(defun conj! (tcoll val)
+  (typecase tcoll
+    (transient-vector (vec-conj! tcoll val))
+    (t (-conj! tcoll val))))
+
 (defmethod (setf sequence:elt) (new-value (o transient-vector) index)
   (cond ((and (>= index 0) (< index (:count o)))
          (if (>= index (tailoff o))
@@ -103,26 +117,14 @@
                                             &key from-end start end)
   (declare (ignore o from-end start end)))
 
-(declaim (inline vec-conj!))
-(defun vec-conj! (tcoll val)
-  (declare (transient-vector tcoll))
-  (let ((i (:count tcoll)))
-    (when (< (- i (tailoff tcoll)) 32)
-      (setf (aref (:tail tcoll) (bit-and i #x01f)) val)
-      (setf (:count tcoll) (1+ i))
-      (return-from vec-conj! tcoll))))
-
-(declaim (inline conj!))
-(defun conj! (tcoll val)
-  (typecase tcoll
-    (transient-vector (vec-conj! tcoll val))
-    (t (-conj! tcoll val))))
-
 (defun editable-root (node)
   (cons *current-thread* (copy-array (cdr node))))
 
 (defun editable-tail (tail)
-  tail)
+  (let ((arr (make-array 32)))
+    (dotimes (i (length tail))
+      (setf (aref arr i) (aref tail i)))
+    arr))
 
 (declaim (inline transient!))
 (defun transient! (coll)
