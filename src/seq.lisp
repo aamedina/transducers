@@ -4,6 +4,13 @@
   (declare (optimize speed (space 0)))
   (:method ((o sequence)) o))
 
+(defgeneric conj (o value)
+  (declare (optimize speed (space 0)))
+  (:method ((o sequence) value) (cons value (seq o))))
+
+(defgeneric conj! (tcoll value)
+  (declare (optimize speed (space 0))))
+
 (defmethod seq ((s simple-string))
   (declare (optimize speed (safety 0) (debug 0) (space 0)))
   (loop for ch across s collect ch))
@@ -19,3 +26,4 @@
       for k being the hash-keys in hash-table
       for v being the hash-values in hash-table
       collect (cons k v))))
+

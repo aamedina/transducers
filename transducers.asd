@@ -9,5 +9,6 @@
                (:file "macros")
                (:file "seq")
                (:file "functional")
+               (:file "vector")
                (:file "transducers")))
 

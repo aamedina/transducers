@@ -4,12 +4,13 @@
   (defconstant no-edit (gensym "no-edit"))
   (defconstant empty-node (cons no-edit (make-array 32))))
 
-(defclass persistent-vector (standard-object sequence)
+(defclass persistent-vector (sb-mop:funcallable-standard-object sequence)
   ((count :type fixnum :initform 0 :initarg :count :accessor :count)
    (shift :type fixnum :initform 5 :initarg :shift :accessor :shift)
    (root :type cons :initform empty-node :initarg :root :accessor :root)
    (tail :type simple-array :initform (make-array 0) :initarg :tail
-         :accessor :tail)))
+         :accessor :tail))
+  (:metaclass sb-mop:funcallable-standard-class))
 
 (when (not (boundp 'empty-vector))
   (defconstant empty-vector (make-instance 'persistent-vector)))
@@ -35,12 +36,13 @@
                                             &key from-end start end)
   (declare (ignore o from-end start end)))
 
-(defclass transient-vector (standard-object sequence)
+(defclass transient-vector (sb-mop:funcallable-standard-object sequence)
   ((count :type fixnum :initform 0 :initarg :count :accessor :count)
    (shift :type fixnum :initform 5 :initarg :shift :accessor :shift)
    (root :type cons :initform empty-node :initarg :root :accessor :root)
    (tail :type simple-array :initform (make-array 0) :initarg :tail
-         :accessor :tail)))
+         :accessor :tail))
+  (:metaclass sb-mop:funcallable-standard-class))
 
 (defmethod sequence:length ((o transient-vector))
   (:count o))
@@ -62,6 +64,9 @@
 (defmethod sequence:make-sequence-iterator ((o transient-vector)
                                             &key from-end start end)
   (declare (ignore o from-end start end)))
+
+(defmethod conj! ((tcoll transient-vector) value)
+  (declare (ignore tcoll value)))
 
 (defun print-vector (vec stream)
   (declare (ignore vec))
