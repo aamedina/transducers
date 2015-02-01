@@ -7,7 +7,7 @@
    (shift :type fixnum :initform 5 :initarg :shift :accessor :shift)
    (root :type cons :initform empty-node :initarg :root :accessor :root)
    (tail :type simple-vector
-         :initform (make-array 0) :initarg :tail :accessor :tail))
+         :initform (make-array 32) :initarg :tail :accessor :tail))
   (:metaclass sb-mop:funcallable-standard-class))
 
 (defmethod initialize-instance :after ((this persistent-vector) &rest initargs)
@@ -46,9 +46,7 @@
 
 (defmethod sequence:elt ((o persistent-vector) index)
   (declare (fixnum index))
-  (if-let (node (array-for o index))
-    (aref node (bit-and index #x01f))
-    (error "Index out of bounds")))
+  (aref (array-for o index) (bit-and index #x01f)))
 
 (defmethod (setf sequence:elt) (new-value (o persistent-vector) index)
   (error "Cannot mutate persistent data structures"))
@@ -65,12 +63,64 @@
                                             &key from-end (start 0) end)
   (make-fast-iterator o from-end start (or end (:count o))))
 
+(declaim (inline push-new-tail))
+(defun make-tail (coll level parent tailnode)
+  (let* ((subidx (bit-and (bit-shift-right (dec (:count coll)) level) #x01f))
+         (ret (cons (car parent)
+                    (make-array 32 :initial-contents (cdr parent))))
+         (node-to-insert (if (= level 5)
+                             tailnode
+                             (let ((child (aref (cdr ret) subidx)))
+                               (if child
+                                   (make-tail coll (- level 5) child tailnode)
+                                   (new-path (car (:root coll)) (- level 5)
+                                             tailnode))))))
+    (setf (aref (cdr ret) subidx) node-to-insert)
+    ret))
+
+(declaim (inline vec-conj))
+(defun vec-conj (coll val)
+  (declare (persistent-vector coll))
+  (let* ((i (:count coll))
+         (index (- i (tailoff coll))))
+    (if (< index 32)
+        (let ((newtail (make-array 32 :initial-contents (:tail coll))))
+          (setf (aref newtail index) val)
+          (make-instance 'persistent-vector
+                         :count (inc i)
+                         :shift (:shift coll)
+                         :root (:root coll)
+                         :tail newtail))
+        (let* ((tailnode (cons (car (:root coll)) (:tail coll)))
+               (newshift (:shift coll))
+               (newroot (if (> (bit-shift-right i 5)
+                               (bit-shift-left 1 newshift))
+                            (let ((arr (make-array 32)))
+                              (setf (aref arr 0) (:root coll))
+                              (setf (aref arr 1) (new-path (car (:root coll))
+                                                           newshift
+                                                           tailnode))
+                              (setf newshift (+ newshift 5))
+                              (cons (car (:root coll)) arr))
+                            (make-tail coll newshift (:root coll) tailnode))))
+          (make-instance 'persistent-vector
+                         :count (inc i)
+                         :shift newshift
+                         :root newroot
+                         :tail (let ((newtail (make-array 32)))
+                                 (setf (aref newtail 0) val)
+                                 newtail))))))
+(defun conj (coll val)
+  (typecase coll
+    (persistent-vector (vec-conj coll val))
+    (t (-conj coll val))))
+
 (defclass transient-vector (sb-mop:funcallable-standard-object sequence)
   ((count :type fixnum :initform 0 :initarg :count :accessor :count)
    (shift :type fixnum :initform 5 :initarg :shift :accessor :shift)
    (root :type cons :initform empty-node :initarg :root :accessor :root)
    (tail :type simple-vector
-         :initform (make-array 0) :initarg :tail :accessor :tail))
+         :initform (make-array 32) :initarg :tail :accessor :tail))
   (:metaclass sb-mop:funcallable-standard-class))
 
 (defmethod initialize-instance :after ((this transient-vector) &rest initargs)
@@ -85,9 +135,7 @@
 
 (defmethod sequence:elt ((o transient-vector) index)
   (declare (fixnum index))
-  (if-let (node (array-for o index))
-    (aref node (bit-and index #x01f))
-    (error "Index out of bounds")))
+  (aref (array-for o index) (bit-and index #x01f)))
 
 (defun ensure-editable (vec &optional (node nil nodep))
   (if nodep
@@ -209,10 +257,8 @@
 (defun fast-elt (sequence iterator)
   (declare (optimize speed (safety 0) (debug 0))
            (fixnum iterator))
-  (let ((arr (array-for sequence iterator)))
-    (if arr
-        (aref (the simple-vector arr) (bit-and iterator #x01f))
-        (error "Index out of bounds"))))
+  (aref (the simple-vector (array-for sequence iterator))
+        (bit-and iterator #x01f)))
 
 (declaim (inline fast-index))
 (defun fast-index (sequence iterator)
@@ -296,10 +342,7 @@
   (cons *current-thread* (copy-array (cdr node))))
 
 (defun editable-tail (tail)
-  (let ((arr (make-array 32)))
-    (dotimes (i (length tail))
-      (setf (aref arr i) (aref tail i)))
-    arr))
+  (make-array 32 :initial-contents tail))
 
 (declaim (inline transient))
 (defun transient (coll)
@@ -315,6 +358,7 @@
 (defun persistent! (tcoll)
   (typecase tcoll
     (transient-vector (progn
+                        (ensure-editable tcoll)
                         (cas (car (:root tcoll)) (car (:root tcoll)) nil)
                         (make-instance 'persistent-vector
                                        :count (:count tcoll)
@@ -322,7 +366,7 @@
                                        :root (:root tcoll)
                                        :tail (->> (- (:count tcoll)
                                                      (tailoff tcoll))
-                                                  (subseq (:tail tcoll))))))
+                                                  (subseq (:tail tcoll) 0)))))
     (t tcoll)))
 
 (defun print-vector (vec stream)
