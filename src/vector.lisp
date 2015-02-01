@@ -1,14 +1,12 @@
 (in-package :transducers)
 
-(define-constant no-edit (gensym "no-edit"))
-(define-constant empty-node (cons no-edit (make-array 32)))
+(define-constant empty-node (cons nil (make-array 32)))
 
 (defclass persistent-vector (sb-mop:funcallable-standard-object sequence)
   ((count :type fixnum :initform 0 :initarg :count :accessor :count)
    (shift :type fixnum :initform 5 :initarg :shift :accessor :shift)
    (root :type cons :initform empty-node :initarg :root :accessor :root)
-   (tail :type simple-array :initform (make-array 0) :initarg :tail
-         :accessor :tail))
+   (tail :type array :initform (make-array 0) :initarg :tail :accessor :tail))
   (:metaclass sb-mop:funcallable-standard-class))
 
 (define-constant empty-vector
@@ -63,8 +61,7 @@
   ((count :type fixnum :initform 0 :initarg :count :accessor :count)
    (shift :type fixnum :initform 5 :initarg :shift :accessor :shift)
    (root :type cons :initform empty-node :initarg :root :accessor :root)
-   (tail :type simple-array :initform (make-array 0) :initarg :tail
-         :accessor :tail))
+   (tail :type array :initform (make-array 0) :initarg :tail :accessor :tail))
   (:metaclass sb-mop:funcallable-standard-class))
 
 (defmethod sequence:length ((o transient-vector))
@@ -106,8 +103,50 @@
                                             &key from-end start end)
   (declare (ignore o from-end start end)))
 
-(defmethod conj! ((tcoll transient-vector) value)
-  (declare (ignore tcoll value)))
+(declaim (inline vec-conj!))
+(defun vec-conj! (tcoll val)
+  (declare (transient-vector tcoll))
+  (let ((i (:count tcoll)))
+    (when (< (- i (tailoff tcoll)) 32)
+      (setf (aref (:tail tcoll) (bit-and i #x01f)) val)
+      (setf (:count tcoll) (1+ i))
+      (return-from vec-conj! tcoll))))
+
+(declaim (inline conj!))
+(defun conj! (tcoll val)
+  (typecase tcoll
+    (transient-vector (vec-conj! tcoll val))
+    (t (-conj! tcoll val))))
+
+(defun editable-root (node)
+  (cons *current-thread* (copy-array (cdr node))))
+
+(defun editable-tail (tail)
+  tail)
+
+(declaim (inline transient!))
+(defun transient! (coll)
+  (typecase coll
+    (persistent-vector (make-instance 'transient-vector
+                                      :count (:count coll)
+                                      :shift (:shift coll)
+                                      :root (editable-root (:root coll))
+                                      :tail (editable-tail (:tail coll))))
+    (t coll)))
+
+(declaim (inline persistent!))
+(defun persistent! (tcoll)
+  (typecase tcoll
+    (transient-vector (progn
+                        (setf (:root tcoll) nil)
+                        (make-instance 'persistent-vector
+                                       :count (:count tcoll)
+                                       :shift (:shift tcoll)
+                                       :root (:root tcoll)
+                                       :tail (->> (- (:count tcoll)
+                                                     (tailoff tcoll))
+                                                  (subseq (:tail tcoll))))))
+    (t tcoll)))
 
 (defun print-vector (vec stream)
   (declare (ignore vec))

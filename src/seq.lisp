@@ -4,11 +4,11 @@
   (declare (optimize speed (space 0)))
   (:method ((o sequence)) o))
 
-(defgeneric conj (o value)
+(defgeneric -conj (coll value)
   (declare (optimize speed (space 0)))
-  (:method ((o sequence) value) (cons value (seq o))))
+  (:method ((coll sequence) value) (cons value (seq coll))))
 
-(defgeneric conj! (tcoll value)
+(defgeneric -conj! (tcoll value)
   (declare (optimize speed (space 0))))
 
 (defmethod seq ((s simple-string))
