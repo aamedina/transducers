@@ -11,7 +11,8 @@
          :accessor :tail))
   (:metaclass sb-mop:funcallable-standard-class))
 
-(define-constant empty-vector (make-instance 'persistent-vector))
+(define-constant empty-vector
+    (load-time-value (make-instance 'persistent-vector)))
 
 (declaim (inline tailoff))
 (defun tailoff (vec)
@@ -74,7 +75,7 @@
     (aref node (bit-and index #x01f))))
 
 (defun assoc-in! (level node i val)
-  (if (zerop shift)
+  (if (zerop level)
       (progn
         (setf (aref (cdr node) (bit-and i #x01f)) val)
         node)
@@ -88,7 +89,7 @@
                (aref (:tail o) (bit-and index #x01f))
                o)
              (progn
-               (setf (:root o) (assoc-in! shift root index new-value))
+               (setf (:root o) (assoc-in! (:shift o) (:root o) index new-value))
                o)))
         ((= index (:count o))
          (conj! o new-value))))
