@@ -107,3 +107,6 @@
                              (declare (ignore ch))
                              (let ((form (read stream t nil t)))
                                `(force ,form)))))
+
+(defmacro define-constant (name value &optional (doc ""))
+  `(defconstant ,name (if (boundp ',name) (symbol-value ',name) ,value) ,doc))

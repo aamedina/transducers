@@ -1,8 +1,7 @@
 (in-package :transducers)
 
-(eval-when (:execute)
-  (defconstant no-edit (gensym "no-edit"))
-  (defconstant empty-node (cons no-edit (make-array 32))))
+(define-constant no-edit (gensym "no-edit"))
+(define-constant empty-node (cons no-edit (make-array 32)))
 
 (defclass persistent-vector (sb-mop:funcallable-standard-object sequence)
   ((count :type fixnum :initform 0 :initarg :count :accessor :count)
