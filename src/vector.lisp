@@ -30,16 +30,16 @@
 
 (defun array-for (vec i)
   (declare ((or persistent-vector transient-vector) vec) (fixnum i))
-  (when (and (>= i 0) (< i (:count vec)))
-    (if (>= i (tailoff vec))
-        (:tail vec)
-        (let ((node (:root vec)))
-          (loop
-            for level from (:shift vec) downto 0 by 5
-            do (->> (bit-and (bit-shift-right i level) #x01f)
-                    (aref (cdr node))
-                    (setf node)))
-          (cdr node)))))
+  (assert (and (>= i 0) (< i (:count vec))) () "Index out of bounds")
+  (if (>= i (tailoff vec))
+      (:tail vec)
+      (let ((node (:root vec)))
+        (loop
+          for level from (:shift vec) above 0 by 5
+          do (->> (bit-and (bit-shift-right i level) #x01f)
+                  (aref (cdr node))
+                  (setf node)))
+        (cdr node))))
 
 (defmethod sequence:length ((o persistent-vector))
   (:count o))
@@ -62,8 +62,8 @@
   (declare (ignore o length initial-element initial-contents)))
 
 (defmethod sequence:make-sequence-iterator ((o persistent-vector)
-                                            &key from-end start end)
-  (declare (ignore o from-end start end)))
+                                            &key from-end (start 0) end)
+  (make-fast-iterator o from-end start (or end (:count o))))
 
 (defclass transient-vector (sb-mop:funcallable-standard-object sequence)
   ((count :type fixnum :initform 0 :initarg :count :accessor :count)
@@ -106,7 +106,7 @@
         (assoc-in! (- level 5) (aref (cdr node) subidx) i val))))
 
 (defun push-tail (vec level parent tailnode)
-  (setf parent (ensure-editable parent))
+  (setf parent (ensure-editable vec parent))
   (let* ((subidx (-> (bit-shift-right (dec (:count vec)) level)
                      (bit-and #x01f)))
          (ret parent)
@@ -241,7 +241,7 @@
   (make-fast-iterator o from-end start (or end (:count o))))
 
 (defun pop-tail (tcoll level node)
-  (setf node (ensure-editable node))
+  (setf node (ensure-editable tcoll node))
   (let ((subidx (bit-and (bit-shift-right (- (:count tcoll) 2) level) #x01f)))
     (cond ((> level 5) (let ((newchild (pop-tail tcoll (- level 5)
                                                  (aref (cdr node) subidx))))
@@ -254,19 +254,19 @@
           (t (setf (aref (cdr node) subidx) nil)
              node))))
 
-(defun editable-array-for (tcoll i)
-  (if (and (>= i 0) (< i (:count tcoll)))
-      (if (>= i (tailoff tcoll))
-          (:tail tcoll)
-          (let ((node (:root tcoll)))
-            (loop
-              for level from (:shift tcoll) downto 0 by 5
-              do (->> (bit-and (bit-shift-right i level) #x01f)
-                      (aref (cdr node))
-                      (ensure-editable tcoll)
-                      (setf node)))
-            (cdr node)))
-      (error "Index out of bounds")))
+(defun editable-array-for (vec i)
+  (declare (transient-vector vec) (fixnum i))
+  (assert (and (>= i 0) (< i (:count vec))) () "Index out of bounds")
+  (if (>= i (tailoff vec))
+      (:tail vec)
+      (let ((node (:root vec)))
+        (loop
+          for level from (:shift vec) above 0 by 5
+          do (->> (bit-and (bit-shift-right i level) #x01f)
+                  (aref (cdr node))
+                  (ensure-editable vec)
+                  (setf node)))
+        (cdr node))))
 
 (defun pop! (tcoll)
   (ensure-editable tcoll)
