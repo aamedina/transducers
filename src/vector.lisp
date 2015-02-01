@@ -6,7 +6,8 @@
   ((count :type fixnum :initform 0 :initarg :count :accessor :count)
    (shift :type fixnum :initform 5 :initarg :shift :accessor :shift)
    (root :type cons :initform empty-node :initarg :root :accessor :root)
-   (tail :type array :initform (make-array 0) :initarg :tail :accessor :tail))
+   (tail :type simple-array
+         :initform (make-array 0) :initarg :tail :accessor :tail))
   (:metaclass sb-mop:funcallable-standard-class))
 
 (defmethod initialize-instance :after ((this persistent-vector) &rest initargs)
@@ -27,26 +28,27 @@
                     0
                     (bit-shift-left (bit-shift-right (dec cnt) 5) 5)))))
 
-(declaim (inline array-for))
 (defun array-for (vec i)
-  (declare ((or persistent-vector transient-vector) vec) ((integer 0 *) i))
+  (declare ((or persistent-vector transient-vector) vec) (fixnum i))
   (when (and (>= i 0) (< i (:count vec)))
-    (when (>= i (tailoff vec))
-      (return-from array-for (:tail vec)))
-    (let ((node (:root vec)))
-      (loop
-        for level from (:shift vec) downto 0 by 5
-        do (->> (bit-and (bit-shift-right i level) #x01f)
-                (aref (cdr node))
-                (setf node)))
-      (the array (cdr node)))))
+    (if (>= i (tailoff vec))
+        (:tail vec)
+        (let ((node (:root vec)))
+          (loop
+            for level from (:shift vec) downto 0 by 5
+            do (->> (bit-and (bit-shift-right i level) #x01f)
+                    (aref (cdr node))
+                    (setf node)))
+          (cdr node)))))
 
 (defmethod sequence:length ((o persistent-vector))
   (:count o))
 
 (defmethod sequence:elt ((o persistent-vector) index)
-  (when-let (node (array-for o index))
-    (aref node (bit-and index #x01f))))
+  (declare (fixnum index))
+  (if-let (node (array-for o index))
+    (aref node (bit-and index #x01f))
+    (error "Index out of bounds")))
 
 (defmethod (setf sequence:elt) (new-value (o persistent-vector) index)
   (error "Cannot mutate persistent data structures"))
@@ -67,7 +69,8 @@
   ((count :type fixnum :initform 0 :initarg :count :accessor :count)
    (shift :type fixnum :initform 5 :initarg :shift :accessor :shift)
    (root :type cons :initform empty-node :initarg :root :accessor :root)
-   (tail :type array :initform (make-array 0) :initarg :tail :accessor :tail))
+   (tail :type simple-array
+         :initform (make-array 0) :initarg :tail :accessor :tail))
   (:metaclass sb-mop:funcallable-standard-class))
 
 (defmethod initialize-instance :after ((this transient-vector) &rest initargs)
@@ -81,8 +84,10 @@
   (:count o))
 
 (defmethod sequence:elt ((o transient-vector) index)
-  (when-let (node (array-for o index))
-    (aref node (bit-and index #x01f))))
+  (declare (fixnum index))
+  (if-let (node (array-for o index))
+    (aref node (bit-and index #x01f))
+    (error "Index out of bounds")))
 
 (defun ensure-editable (vec &optional (node nil nodep))
   (if nodep
@@ -169,15 +174,53 @@
 
 (defmethod sequence:adjust-sequence ((o transient-vector) length
                                      &key initial-element initial-contents)
-  (declare (ignore o length initial-element initial-contents)))
+  (let ((tcoll (transient empty-vector)))
+    (cond (initial-contents (dolist (x initial-contents)
+                              (vec-conj! tcoll x)))
+          (initial-element (dotimes (i length)
+                             (vec-conj! tcoll initial-element)))
+          (t (dotimes (i length)
+               (vec-conj! tcoll (elt o i)))))))
 
 (defmethod sequence:make-sequence-like ((o transient-vector) length
                                         &key initial-element initial-contents)
-  (declare (ignore o length initial-element initial-contents)))
+  (sequence:adjust-sequence o length
+                            :initial-element initial-element
+                            :initial-contents initial-contents))
+
+(defmethod sequence:emptyp ((o transient-vector))
+  (zerop (:count o)))
+
+(declaim (inline make-fast-iterator))
+(defun make-fast-iterator (o from-end start end)
+  (declare (optimize speed (debug 0) (safety 0))
+           (fixnum start end)
+           (ignore o))
+  (values (the fixnum (if from-end (dec end) start))
+          (the fixnum (if from-end (dec start) end))
+          from-end
+          (lambda (o i from-end)
+            (declare (optimize speed (debug 0) (safety 0)) (ignore o)
+                     (fixnum i))
+            (the fixnum (if from-end (dec i) (inc i))))
+          (lambda (o i limit from-end)
+            (declare (optimize speed (debug 0) (safety 0)) (ignore o from-end)
+                     (fixnum i limit))
+            (= i limit))
+          (lambda (o index)
+            ;; (declare ((or persistent-vector transient-vector) o)
+            ;;          (optimize speed (debug 0) (safety 0))
+            ;;          (fixnum index))
+            (if-let (arr (array-for o index))
+              (aref arr (bit-and index #x01f))
+              (error "Index out of bounds")))
+          #'(setf sequence:iterator-element)
+          #'sequence:iterator-index
+          #'sequence:iterator-copy))
 
 (defmethod sequence:make-sequence-iterator ((o transient-vector)
-                                            &key from-end start end)
-  (declare (ignore o from-end start end)))
+                                            &key from-end (start 0) end)
+  (make-fast-iterator o from-end start (or end (:count o))))
 
 (defun pop-tail (tcoll level node)
   (setf node (ensure-editable node))
