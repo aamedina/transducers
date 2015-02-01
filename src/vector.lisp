@@ -11,8 +11,14 @@
          :accessor :tail))
   (:metaclass sb-mop:funcallable-standard-class))
 
-(when (not (boundp 'empty-vector))
-  (defconstant empty-vector (make-instance 'persistent-vector)))
+(define-constant empty-vector (make-instance 'persistent-vector))
+
+(defun tailoff (vec)
+  (declare (or persistent-vector transient-vector))
+  (let ((cnt (:count vec)))
+    (the fixnum (if (< cnt 32)
+                    0
+                    (dec cnt)))))
 
 (defmethod sequence:length ((o persistent-vector))
   (:count o))

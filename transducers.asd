@@ -6,6 +6,7 @@
   :serial t
   :pathname "src"
   :components ((:file "package")
+               (:file "bitwise")
                (:file "macros")
                (:file "seq")
                (:file "functional")
