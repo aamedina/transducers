@@ -6,7 +6,7 @@
   ((count :type fixnum :initform 0 :initarg :count :accessor :count)
    (shift :type fixnum :initform 5 :initarg :shift :accessor :shift)
    (root :type cons :initform empty-node :initarg :root :accessor :root)
-   (tail :type simple-array
+   (tail :type simple-vector
          :initform (make-array 0) :initarg :tail :accessor :tail))
   (:metaclass sb-mop:funcallable-standard-class))
 
@@ -69,7 +69,7 @@
   ((count :type fixnum :initform 0 :initarg :count :accessor :count)
    (shift :type fixnum :initform 5 :initarg :shift :accessor :shift)
    (root :type cons :initform empty-node :initarg :root :accessor :root)
-   (tail :type simple-array
+   (tail :type simple-vector
          :initform (make-array 0) :initarg :tail :accessor :tail))
   (:metaclass sb-mop:funcallable-standard-class))
 
@@ -191,6 +191,36 @@
 (defmethod sequence:emptyp ((o transient-vector))
   (zerop (:count o)))
 
+(declaim (inline fast-step))
+(defun fast-step (sequence iterator from-end)
+  (declare (optimize speed (safety 0) (debug 0))
+           (ignore sequence)
+           (fixnum iterator))
+  (the fixnum (if from-end (1- iterator) (1+ iterator))))
+
+(declaim (inline fast-endp))
+(defun fast-endp (sequence iterator limit from-end)
+  (declare (optimize speed (safety 0) (debug 0))
+           (ignore sequence from-end)
+           (fixnum iterator limit))
+  (= iterator limit))
+
+(declaim (inline fast-elt))
+(defun fast-elt (sequence iterator)
+  (declare (optimize speed (safety 0) (debug 0))
+           (fixnum iterator))
+  (let ((arr (array-for sequence iterator)))
+    (if arr
+        (aref (the simple-vector arr) (bit-and iterator #x01f))
+        (error "Index out of bounds"))))
+
+(declaim (inline fast-index))
+(defun fast-index (sequence iterator)
+  (declare (optimize speed (safety 0) (debug 0))
+           (ignore sequence)
+           (fixnum iterator))
+  iterator)
+
 (declaim (inline make-fast-iterator))
 (defun make-fast-iterator (o from-end start end)
   (declare (optimize speed (debug 0) (safety 0))
@@ -199,24 +229,12 @@
   (values (the fixnum (if from-end (dec end) start))
           (the fixnum (if from-end (dec start) end))
           from-end
-          (lambda (o i from-end)
-            (declare (optimize speed (debug 0) (safety 0)) (ignore o)
-                     (fixnum i))
-            (the fixnum (if from-end (dec i) (inc i))))
-          (lambda (o i limit from-end)
-            (declare (optimize speed (debug 0) (safety 0)) (ignore o from-end)
-                     (fixnum i limit))
-            (= i limit))
-          (lambda (o index)
-            ;; (declare ((or persistent-vector transient-vector) o)
-            ;;          (optimize speed (debug 0) (safety 0))
-            ;;          (fixnum index))
-            (if-let (arr (array-for o index))
-              (aref arr (bit-and index #x01f))
-              (error "Index out of bounds")))
-          #'(setf sequence:iterator-element)
-          #'sequence:iterator-index
-          #'sequence:iterator-copy))
+          #'fast-step
+          #'fast-endp
+          #'fast-elt
+          #'(setf sequence:elt)
+          #'fast-index
+          #'fast-index))
 
 (defmethod sequence:make-sequence-iterator ((o transient-vector)
                                             &key from-end (start 0) end)
