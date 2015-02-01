@@ -3,6 +3,6 @@
   (:shadow :define-constant :map :remove :replace :first :rest
            :bit-not :bit-and :bit-xor))
 
-(proclaim '(optimize speed))
+(declaim (optimize speed))
 
 (unlock-package :common-lisp)

@@ -70,6 +70,10 @@
   (when-let (node (array-for o index))
     (aref node (bit-and index #x01f))))
 
+(defun ensure-editable (vec)
+  (when (null (car (:root vec)))
+    (error "Transient used after persistent! call")))
+
 (defun assoc-in! (level node i val)
   (if (zerop level)
       (progn
@@ -126,8 +130,8 @@
       (setf (aref arr i) (aref tail i)))
     arr))
 
-(declaim (inline transient!))
-(defun transient! (coll)
+(declaim (inline transient))
+(defun transient (coll)
   (typecase coll
     (persistent-vector (make-instance 'transient-vector
                                       :count (:count coll)
@@ -140,7 +144,7 @@
 (defun persistent! (tcoll)
   (typecase tcoll
     (transient-vector (progn
-                        (setf (:root tcoll) nil)
+                        (cas (car (:root tcoll)) (car (:root tcoll)) nil)
                         (make-instance 'persistent-vector
                                        :count (:count tcoll)
                                        :shift (:shift tcoll)
@@ -160,3 +164,4 @@
 
 (defmethod print-object ((object transient-vector) stream)
   (print-vector object stream))
+
