@@ -9,6 +9,13 @@
    (tail :type array :initform (make-array 0) :initarg :tail :accessor :tail))
   (:metaclass sb-mop:funcallable-standard-class))
 
+(defmethod initialize-instance :after ((this persistent-vector) &rest initargs)
+  (declare (optimize speed (safety 0) (debug 0)) (ignore initargs))
+  (sb-mop:set-funcallable-instance-function
+   this (lambda (index)
+          (declare (fixnum index) (optimize speed (safety 0) (debug 0)))
+          (elt (the persistent-vector this) index))))
+
 (define-constant empty-vector (make-instance 'persistent-vector))
 
 (declaim (inline tailoff))
@@ -62,6 +69,13 @@
    (root :type cons :initform empty-node :initarg :root :accessor :root)
    (tail :type array :initform (make-array 0) :initarg :tail :accessor :tail))
   (:metaclass sb-mop:funcallable-standard-class))
+
+(defmethod initialize-instance :after ((this transient-vector) &rest initargs)
+  (declare (optimize speed (safety 0) (debug 0)) (ignore initargs))
+  (sb-mop:set-funcallable-instance-function
+   this (lambda (index)
+          (declare (fixnum index) (optimize speed (safety 0) (debug 0)))
+          (elt (the transient-vector this) index))))
 
 (defmethod sequence:length ((o transient-vector))
   (:count o))
