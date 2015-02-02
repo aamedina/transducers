@@ -17,7 +17,7 @@
           (declare (fixnum index) (optimize speed (safety 0) (debug 0)))
           (elt (the persistent-vector this) index))))
 
-(define-constant empty-vector (make-instance 'persistent-vector))
+(defvar empty-vector (make-instance 'persistent-vector))
 
 (declaim (inline tailoff))
 (defun tailoff (vec)
@@ -110,10 +110,46 @@
                          :tail (let ((newtail (make-array 32)))
                                  (setf (aref newtail 0) val)
                                  newtail))))))
+
+(define-compiler-macro conj (coll val)
+  `(typecase ,coll
+     (persistent-vector (vec-conj ,coll ,val))
+     (t (-conj ,coll ,val))))
+
 (defun conj (coll val)
   (typecase coll
     (persistent-vector (vec-conj coll val))
     (t (-conj coll val))))
+
+(defun pop-tail (coll level node)
+  (declare (ignore coll level node)))
+
+(defun pop (coll)
+  (let ((cnt (:count coll)))
+    (cond ((zerop cnt) (error "Can't pop empty vector"))
+          
+          ((= cnt 1) empty-vector)
+
+          ((> (- cnt (tailoff coll)) 1)
+           (make-instance 'persistent-vector
+                          :count (dec cnt)
+                          :shift (:shift coll)
+                          :root (:root coll)
+                          :tail (make-array 32 :initial-contents (:tail coll))))
+
+          (t (let* ((newtail (array-for coll (- cnt 2)))
+                    (newroot (pop-tail coll (:shift coll) (:root coll)))
+                    (newshift (:shift coll)))
+               (when (null newroot)
+                 (setf newroot empty-node))
+               (when (and (> (:shift coll) 5) (null (aref (cdr newroot) 1)))
+                 (setf newroot (aref (cdr newroot) 0))
+                 (setf newshift (- newshift 5)))
+               (make-instance 'persistent-vector
+                              :count (dec cnt)
+                              :shift newshift
+                              :root newroot
+                              :tail newtail))))))
 
 (defclass transient-vector (sb-mop:funcallable-standard-object sequence)
   ((count :type fixnum :initform 0 :initarg :count :accessor :count)
@@ -202,6 +238,11 @@
           (setf (:count tcoll) (inc i))))
     (the transient-vector tcoll)))
 
+(define-compiler-macro conj! (coll val)
+  `(typecase ,coll
+     (transient-vector (vec-conj! ,coll ,val))
+     (t (-conj! ,coll ,val))))
+
 (declaim (inline conj!))
 (defun conj! (tcoll val)
   (typecase tcoll
@@ -286,11 +327,11 @@
                                             &key from-end (start 0) end)
   (make-fast-iterator o from-end start (or end (:count o))))
 
-(defun pop-tail (tcoll level node)
+(defun pop-tail! (tcoll level node)
   (setf node (ensure-editable tcoll node))
   (let ((subidx (bit-and (bit-shift-right (- (:count tcoll) 2) level) #x01f)))
-    (cond ((> level 5) (let ((newchild (pop-tail tcoll (- level 5)
-                                                 (aref (cdr node) subidx))))
+    (cond ((> level 5) (let ((newchild (pop-tail! tcoll (- level 5)
+                                                  (aref (cdr node) subidx))))
                          (if (and (null newchild) (zerop subidx))
                              nil
                              (progn
@@ -325,7 +366,7 @@
            (setf (:count tcoll) (dec cnt)) tcoll)
 
           (t (let* ((newtail (editable-array-for tcoll (- cnt 2)))
-                    (newroot (pop-tail tcoll (:shift tcoll) (:root tcoll)))
+                    (newroot (pop-tail! tcoll (:shift tcoll) (:root tcoll)))
                     (newshift (:shift tcoll)))
                (when (null newroot)
                  (setf newroot (cons (car (:root tcoll)) (make-array 32))))
@@ -379,8 +420,21 @@
   (princ "]" stream))
 
 (defmethod print-object ((object persistent-vector) stream)
-  (print-vector object stream))
+  (let ((*print-readably* t))
+    (print-vector object stream)))
 
 (defmethod print-object ((object transient-vector) stream)
   (print-vector object stream))
 
+(eval-when (:compile-toplevel)
+  (defun read-vector (stream ch)
+    (declare (ignore ch))
+    (let ((*read-eval* nil)
+          (list (read-delimited-list #\] stream t)))
+      (if (emptyp list)
+          empty-vector
+          (->> (transient empty-vector)
+               (reduce #'conj! list :initial-value)
+               (persistent!)))))
+  (set-macro-character #\] (get-macro-character #\)))
+  (set-macro-character #\[ #'read-vector))
