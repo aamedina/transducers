@@ -171,10 +171,13 @@
         (funcall rf (reduce rf coll :initial-value init)))
       (transduce xf f coll (funcall f))))
 
-(defun into (to from &optional (xf (map #'identity)))
-  (declare (sequence to from) (function xf))
-  (persistent! (transduce xf #'conj! from (transient to))))
+(declaim (inline into))
+(defun into (to from &optional (xf #'identity xfp))
+  (declare (function xf) (optimize speed (debug 0)))
+  (if xfp
+      (persistent! (transduce xf #'conj! from (transient to)))
+      (persistent! (reduce #'conj! from :initial-value (transient to)))))
 
 (defun sequence (xf coll &rest colls)
-  (declare (function xf) (sequence coll))
-  (into [] xf (if colls (cons coll colls) coll)))
+  (declare (function xf))
+  (into [] (if colls (cons coll colls) coll) xf))

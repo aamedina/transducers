@@ -46,13 +46,19 @@
   (apply #'compose more))
 
 (defun range (start &optional (end 0 endp) (step 1))
-  (declare (fixnum start end step))
+  (declare (optimize speed (debug 0) (safety 0))
+           (fixnum start end step))
   (when-not (= start end)
     (let ((start (if endp start end))
           (end (if endp end start)))
-      (loop for n from start below end by step collect n))))
+      (loop for n from start below end by step collect (the fixnum n)))))
 
 (defun concat (x y &rest more)
+  (declare (optimize speed (debug 0) (safety 0)))
   (if more
       (concat (concatenate 'list x y) more)
       (concatenate 'list x y)))
+
+(defun repeat (x n)
+  (declare (fixnum n) (optimize speed (debug 0) (safety 0)))
+  (loop for n from 0 below n collect x))

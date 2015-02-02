@@ -2,8 +2,7 @@
 
 (define-constant empty-node (cons nil (make-array 32)))
 
-(defclass persistent-vector (sb-mop:funcallable-standard-object sequence
-                                                                )
+(defclass persistent-vector (sb-mop:funcallable-standard-object sequence)
   ((count :type fixnum :initform 0 :initarg :count :accessor :count)
    (shift :type fixnum :initform 5 :initarg :shift :accessor :shift)
    (root :type cons :initform empty-node :initarg :root :accessor :root)
@@ -44,26 +43,45 @@
         (cdr node))))
 
 (defmethod sequence:length ((o persistent-vector))
+  (declare (optimize speed (debug 0) (safety 0))
+           (persistent-vector o))
   (:count o))
 
 (defmethod sequence:elt ((o persistent-vector) index)
-  (declare (fixnum index))
-  (aref (array-for o index) (bit-and index #x01f)))
+  (declare (optimize speed (debug 0) (safety 0))
+           (persistent-vector o)
+           (fixnum index))
+  (aref (the simple-vector (array-for o index)) (bit-and index #x01f)))
 
 (defmethod (setf sequence:elt) (new-value (o persistent-vector) index)
+  (declare (optimize speed (debug 0) (safety 0))
+           (persistent-vector o)
+           (fixnum index))
   (error "Cannot mutate persistent data structures"))
 
 (defmethod sequence:adjust-sequence ((o persistent-vector) length
                                      &key initial-element initial-contents)
-  (declare (ignore o length initial-element initial-contents)))
+  (declare (optimize speed (debug 0) (safety 0))
+           (persistent-vector o)
+           (fixnum length))
+  (cond (initial-contents (into [] initial-contents))
+        (initial-element (into [] (repeat initial-element length)))
+        (t (into [] o (take length)))))
 
 (defmethod sequence:make-sequence-like ((o persistent-vector) length
                                         &key initial-element initial-contents)
+  (declare (optimize speed (debug 0) (safety 0))
+           (persistent-vector o)
+           (fixnum length))
   (declare (ignore o length initial-element initial-contents)))
 
 (defmethod sequence:make-sequence-iterator ((o persistent-vector)
-                                            &key from-end (start 0) end)
-  (make-fast-iterator o from-end start (or end (:count o))))
+                                            &key from-end (start 0)
+                                              (end (:count o)))
+  (declare (optimize speed (debug 0) (safety 0))
+           (persistent-vector o)
+           (fixnum start end))
+  (make-fast-iterator o from-end start end))
 
 (declaim (inline push-new-tail))
 (defun make-tail (coll level parent tailnode)
@@ -170,10 +188,12 @@
                 (bit-and index #x01f)))))
 
 (defmethod sequence:length ((o transient-vector))
+  (ensure-editable o)
   (:count o))
 
 (defmethod sequence:elt ((o transient-vector) index)
   (declare (fixnum index))
+  (ensure-editable o)
   (aref (array-for o index) (bit-and index #x01f)))
 
 (defun ensure-editable (vec &optional (node nil nodep))
@@ -215,30 +235,36 @@
 
 (declaim (inline vec-conj!))
 (defun vec-conj! (tcoll val)
-  (declare (transient-vector tcoll))
+  (declare (transient-vector tcoll) (optimize speed (debug 0) (safety 0)))
+  (ensure-editable tcoll)
   (let ((i (:count tcoll)))
+    (declare (fixnum i))
     (if (< (- i (tailoff tcoll)) 32)
         (progn
-          (setf (aref (:tail tcoll) (bit-and i #x01f)) val)
-          (setf (:count tcoll) (inc i)))
+          (setf (aref (the simple-vector (:tail tcoll)) (bit-and i #x01f)) val)
+          (setf (:count tcoll) (the fixnum (inc i))))
         (let ((newroot nil)
-              (tailnode (cons (car (:root tcoll)) (:tail tcoll)))
-              (tail (setf (:tail tcoll) (make-array 32)))
+              (tailnode (cons (car (:root tcoll))
+                              (the simple-vector (:tail tcoll))))
+              (tail (the simple-vector (setf (:tail tcoll) (make-array 32))))
               (newshift (:shift tcoll)))
+          (declare (fixnum newshift))
           (setf (aref tail 0) val)
-          (if (> (bit-shift-right (:count tcoll) 5) (bit-shift-left 1 newshift))
+          (if (> (bit-shift-right i 5)
+                 (the fixnum (bit-shift-left 1 newshift)))
               (progn
                 (setf newroot (cons (car (:root tcoll)) (make-array 32)))
-                (setf (aref (cdr newroot) 0) (:root tcoll))
-                (setf (aref (cdr newroot) 1) (new-path (car (:root tcoll))
-                                                       (:shift tcoll)
-                                                       tailnode))
+                (setf (aref (the simple-vector (cdr newroot)) 0) (:root tcoll))
+                (setf (aref (the simple-vector (cdr newroot)) 1)
+                      (new-path (car (:root tcoll))
+                                (:shift tcoll)
+                                tailnode))
                 (setf newshift (+ newshift 5)))
               (setf newroot (push-tail tcoll (:shift tcoll) (:root tcoll)
                                        tailnode)))
           (setf (:root tcoll) newroot)
           (setf (:shift tcoll) newshift)
-          (setf (:count tcoll) (inc i))))
+          (setf (:count tcoll) (the fixnum (inc i)))))
     (the transient-vector tcoll)))
 
 (declaim (inline conj!))
@@ -261,6 +287,9 @@
 
 (defmethod sequence:adjust-sequence ((o transient-vector) length
                                      &key initial-element initial-contents)
+  (declare (optimize speed (debug 0) (safety 0))
+           (transient-vector o)
+           (fixnum length))
   (let ((tcoll (transient empty-vector)))
     (cond (initial-contents (dolist (x initial-contents)
                               (vec-conj! tcoll x)))
@@ -271,12 +300,14 @@
 
 (defmethod sequence:make-sequence-like ((o transient-vector) length
                                         &key initial-element initial-contents)
+  (declare (optimize speed (debug 0) (safety 0)))
   (sequence:adjust-sequence o length
                             :initial-element initial-element
                             :initial-contents initial-contents))
 
 (defmethod sequence:emptyp ((o transient-vector))
-  (zerop (:count o)))
+  (declare (optimize speed (debug 0) (safety 0)))
+  (zerop (the fixnum (:count o))))
 
 (declaim (inline fast-step))
 (defun fast-step (sequence iterator from-end)
@@ -323,57 +354,77 @@
 
 (defmethod sequence:make-sequence-iterator ((o transient-vector)
                                             &key from-end (start 0) end)
+  (declare (optimize speed (debug 0) (safety 0)))
   (make-fast-iterator o from-end start (or end (:count o))))
 
 (defun pop-tail! (tcoll level node)
+  (declare (optimize speed (debug 0) (safety 0))
+           (transient-vector tcoll)
+           (cons node)
+           ((unsigned-byte 62) level))
   (setf node (ensure-editable tcoll node))
-  (let ((subidx (bit-and (bit-shift-right (- (:count tcoll) 2) level) #x01f)))
-    (cond ((> level 5) (let ((newchild (pop-tail! tcoll (- level 5)
-                                                  (aref (cdr node) subidx))))
+  (let ((subidx (-> (- (the fixnum (:count tcoll)) 2)
+                    (bit-shift-right level)
+                    (bit-and #x01f))))
+    (cond ((> level 5) (let ((newchild (->> (aref (the simple-vector (cdr node))
+                                                  subidx)
+                                            (pop-tail! tcoll (- level 5)))))
                          (if (and (null newchild) (zerop subidx))
                              nil
                              (progn
-                               (setf (aref (cdr node) subidx) newchild)
+                               (setf (aref (the simple-vector (cdr node))
+                                           subidx) newchild)
                                node))))
           ((= subidx 0) nil)
-          (t (setf (aref (cdr node) subidx) nil)
+          (t (setf (aref (the simple-vector (cdr node)) subidx) nil)
              node))))
 
 (defun editable-array-for (vec i)
-  (declare (transient-vector vec) (fixnum i))
-  (assert (and (>= i 0) (< i (:count vec))) () "Index out of bounds")
+  (declare (optimize speed (debug 0) (safety 0))
+           (transient-vector vec)
+           (fixnum i))
+  (assert (and (>= i 0) (< i (the fixnum (:count vec)))) ()
+          "Index out of bounds")
   (if (>= i (tailoff vec))
-      (:tail vec)
-      (let ((node (:root vec)))
+      (the simple-vector (:tail vec))
+      (let ((node (:root vec))
+            (shift (:shift vec)))
         (loop
-          for level from (:shift vec) above 0 by 5
-          do (->> (bit-and (bit-shift-right i level) #x01f)
-                  (aref (cdr node))
+          for level from (the fixnum shift) above 0 by 5
+          do (->> #x01f
+                  (bit-and (bit-shift-right i (the (unsigned-byte 62) level)))
+                  (aref (the simple-vector (cdr node)))
                   (ensure-editable vec)
                   (setf node)))
-        (cdr node))))
+        (the simple-vector (cdr node)))))
 
 (defun pop! (tcoll)
+  (declare (optimize speed (debug 0) (safety 0)))
   (ensure-editable tcoll)
   (let ((cnt (:count tcoll)))
+    (declare (fixnum cnt))
     (cond ((zerop cnt) (error "Can't pop empty vector"))
           
           ((= cnt 1) (setf (:count tcoll) 0) tcoll)
 
           ((plusp (bit-and (dec cnt) #x01f))
-           (setf (:count tcoll) (dec cnt)) tcoll)
+           (setf (:count tcoll) (the fixnum (dec cnt))) tcoll)
 
-          (t (let* ((newtail (editable-array-for tcoll (- cnt 2)))
+          (t (let* ((newtail (editable-array-for tcoll (the fixnum (- cnt 2))))
                     (newroot (pop-tail! tcoll (:shift tcoll) (:root tcoll)))
                     (newshift (:shift tcoll)))
+               (declare (fixnum newshift))
                (when (null newroot)
                  (setf newroot (cons (car (:root tcoll)) (make-array 32))))
-               (when (and (> (:shift tcoll) 5) (null (aref (cdr newroot) 1)))
-                 (setf newroot (ensure-editable tcoll (aref (cdr newroot) 0)))
+               (when (and (> newshift 5)
+                          (null (aref (the simple-vector (cdr newroot)) 1)))
+                 (->> (aref (the simple-vector (cdr newroot)) 0)
+                      (ensure-editable tcoll)
+                      (setf newroot))                 
                  (setf newshift (- newshift 5)))
                (setf (:root tcoll) newroot)
                (setf (:shift tcoll) newshift)
-               (setf (:count tcoll) (dec cnt))
+               (setf (:count tcoll) (the fixnum (dec cnt)))
                (setf (:tail tcoll) newtail)
                tcoll)))))
 
@@ -385,6 +436,7 @@
 
 (declaim (inline transient))
 (defun transient (coll)
+  (declare (optimize speed (debug 0) (safety 0)))
   (typecase coll
     (persistent-vector (make-instance 'transient-vector
                                       :count (:count coll)
@@ -395,6 +447,7 @@
 
 (declaim (inline persistent!))
 (defun persistent! (tcoll)
+  (declare (optimize speed (debug 0) (safety 0)))
   (typecase tcoll
     (transient-vector (progn
                         (ensure-editable tcoll)
@@ -419,25 +472,31 @@
   (let ((*print-readably* t))
     (print-vector object stream)))
 
+(define-compiler-macro vector (&rest objects)
+  (->> (transient empty-vector)
+       (reduce #'conj! objects :initial-value)
+       (persistent!)
+       (make-load-form)))
+
+(defun vector (&rest objects)
+  (declare (optimize speed (debug 0) (safety 0)))
+  (->> (transient empty-vector)
+       (reduce #'conj! objects :initial-value)
+       (persistent!)))
+
 (eval-when (:compile-toplevel)
+  (set-macro-character #\] (get-macro-character #\)))
   (defun read-vector (stream ch)
     (declare (ignore ch))
-    (let ((*read-eval* nil)
-          (list (read-delimited-list #\] stream t)))
+    (let* ((list (read-delimited-list #\] stream t)))
       (if (emptyp list)
-          (make-load-form empty-vector)
-          (->> (transient empty-vector)
-               (reduce #'conj! list :initial-value)
-               (persistent!)
-               (make-load-form)))))
+          `empty-vector
+          (apply #'vector list))))
   (defmethod make-load-form ((object persistent-vector) &optional env)
-    (declare (ignore env))
+    (declare (ignore env) (optimize speed (debug 0) (safety 0)))
     `(make-instance 'persistent-vector
                     :count ,(:count object)
                     :shift ,(:shift object)
-                    :root ',(:root object)
+                    :root (cons ,(car (:root object)) ,(cdr (:root object)))
                     :tail ,(:tail object)))
-  (set-macro-character #\] (get-macro-character #\)))
   (set-macro-character #\[ #'read-vector))
-
-;; (make-load-form [0 1 2 3 4])

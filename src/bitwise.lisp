@@ -4,7 +4,6 @@
   `(lognot ,n))
 
 (defun bit-not (n)
-  (declare (number n))
   (lognot n))
 
 (define-compiler-macro bit-and (x y &rest more)
@@ -13,7 +12,6 @@
       `(logand ,x ,y)))
 
 (defun bit-and (x y &rest more)
-  (declare (integer x y))
   (if more
       (reduce #'logand more :initial-value (logand x y))
       (logand x y)))
@@ -24,7 +22,6 @@
       `(logior ,x ,y)))
 
 (defun bit-or (x y &rest more)
-  (declare (integer x y))
   (if more
       (reduce #'logior more :initial-value (logior x y))
       (logior x y)))
@@ -35,7 +32,6 @@
       `(logxor ,x ,y)))
 
 (defun bit-xor (x y &rest more)
-  (declare (integer x y))
   (if more
       (reduce #'logxor more :initial-value (logxor x y))
       (logxor x y)))
@@ -44,12 +40,10 @@
   `(ash ,x ,n))
 
 (defun bit-shift-left (x n)
-  (declare (fixnum x n))
   (ash x n))
 
 (define-compiler-macro bit-shift-right (x n)
   `(ash ,x (- ,n)))
 
 (defun bit-shift-right (x n)
-  (declare (fixnum x n))
   (ash x (- n)))
