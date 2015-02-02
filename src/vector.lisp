@@ -2,7 +2,8 @@
 
 (define-constant empty-node (cons nil (make-array 32)))
 
-(defclass persistent-vector (sb-mop:funcallable-standard-object sequence)
+(defclass persistent-vector (sb-mop:funcallable-standard-object sequence
+                                                                )
   ((count :type fixnum :initform 0 :initarg :count :accessor :count)
    (shift :type fixnum :initform 5 :initarg :shift :accessor :shift)
    (root :type cons :initform empty-node :initarg :root :accessor :root)
@@ -15,7 +16,8 @@
   (sb-mop:set-funcallable-instance-function
    this (lambda (index)
           (declare (fixnum index) (optimize speed (safety 0) (debug 0)))
-          (elt (the persistent-vector this) index))))
+          (aref (the simple-vector (array-for this index))
+                (bit-and index #x01f)))))
 
 (defvar empty-vector (make-instance 'persistent-vector))
 
@@ -164,7 +166,8 @@
   (sb-mop:set-funcallable-instance-function
    this (lambda (index)
           (declare (fixnum index) (optimize speed (safety 0) (debug 0)))
-          (elt (the transient-vector this) index))))
+          (aref (the simple-vector (array-for this index))
+                (bit-and index #x01f)))))
 
 (defmethod sequence:length ((o transient-vector))
   (:count o))
@@ -177,7 +180,7 @@
   (if nodep
       (if (eq (car node) (car (:root vec)))
           node
-          (cons (car (:root vec)) (copy-array (cdr node))))
+          (cons (car (:root vec)) (make-array 32 :initial-contents (cdr node))))
       (when (null (car (:root vec)))
         (error "Transient used after persistent! call"))))
 
@@ -237,11 +240,6 @@
           (setf (:shift tcoll) newshift)
           (setf (:count tcoll) (inc i))))
     (the transient-vector tcoll)))
-
-(define-compiler-macro conj! (coll val)
-  `(typecase ,coll
-     (transient-vector (vec-conj! ,coll ,val))
-     (t (-conj! ,coll ,val))))
 
 (declaim (inline conj!))
 (defun conj! (tcoll val)
@@ -380,7 +378,7 @@
                tcoll)))))
 
 (defun editable-root (node)
-  (cons *current-thread* (copy-array (cdr node))))
+  (cons *current-thread* (make-array 32 :initial-contents (cdr node))))
 
 (defun editable-tail (tail)
   (make-array 32 :initial-contents tail))
@@ -405,9 +403,7 @@
                                        :count (:count tcoll)
                                        :shift (:shift tcoll)
                                        :root (:root tcoll)
-                                       :tail (->> (- (:count tcoll)
-                                                     (tailoff tcoll))
-                                                  (subseq (:tail tcoll) 0)))))
+                                       :tail (:tail tcoll))))
     (t tcoll)))
 
 (defun print-vector (vec stream)
@@ -423,18 +419,25 @@
   (let ((*print-readably* t))
     (print-vector object stream)))
 
-(defmethod print-object ((object transient-vector) stream)
-  (print-vector object stream))
-
 (eval-when (:compile-toplevel)
   (defun read-vector (stream ch)
     (declare (ignore ch))
     (let ((*read-eval* nil)
           (list (read-delimited-list #\] stream t)))
       (if (emptyp list)
-          empty-vector
+          (make-load-form empty-vector)
           (->> (transient empty-vector)
                (reduce #'conj! list :initial-value)
-               (persistent!)))))
+               (persistent!)
+               (make-load-form)))))
+  (defmethod make-load-form ((object persistent-vector) &optional env)
+    (declare (ignore env))
+    `(make-instance 'persistent-vector
+                    :count ,(:count object)
+                    :shift ,(:shift object)
+                    :root ',(:root object)
+                    :tail ,(:tail object)))
   (set-macro-character #\] (get-macro-character #\)))
   (set-macro-character #\[ #'read-vector))
+
+;; (make-load-form [0 1 2 3 4])
